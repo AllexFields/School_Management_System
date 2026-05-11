@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 import re
 
-# ---------------- PAGE CONFIG ---------------- #
+# =========================================================
+# PAGE CONFIG
+# =========================================================
 
 st.set_page_config(
     page_title="School Management System",
@@ -10,20 +13,42 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- TITLE ---------------- #
+# =========================================================
+# DATABASE CONNECTION
+# =========================================================
+
+def get_connection():
+    return sqlite3.connect("school.db")
+
+conn = get_connection()
+cursor = conn.cursor()
+
+# =========================================================
+# CREATE TABLE
+# =========================================================
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS students(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Name TEXT NOT NULL,
+    Age INTEGER NOT NULL,
+    Standard INTEGER NOT NULL,
+    Contact TEXT NOT NULL
+)
+""")
+
+conn.commit()
+
+# =========================================================
+# TITLE
+# =========================================================
 
 st.title("🏫 School Management System")
 st.write("Manage student records easily")
 
-# ---------------- SESSION STORAGE ---------------- #
-
-if "students" not in st.session_state:
-    st.session_state.students = []
-
-if "student_id" not in st.session_state:
-    st.session_state.student_id = 1
-
-# ---------------- SIDEBAR MENU ---------------- #
+# =========================================================
+# SIDEBAR MENU
+# =========================================================
 
 menu = st.sidebar.selectbox(
     "Select Option",
@@ -66,30 +91,32 @@ if menu == "New Admission":
 
         pattern = r'^[6-9]\d{9}$'
 
+        # VALIDATIONS
+
         if not name.strip():
+
             st.error("Student name cannot be empty")
 
         elif not all(i.isalpha() for i in name.split()):
+
             st.error("Only alphabets are allowed in name")
 
         elif not re.match(pattern, contact):
+
             st.error(
                 "Invalid contact number. Must start from 6-9 and contain 10 digits"
             )
 
         else:
 
-            student = {
-                "ID": st.session_state.student_id,
-                "Name": name.title(),
-                "Age": age,
-                "Standard": standard,
-                "Contact": contact
-            }
+            # INSERT DATA INTO DATABASE
 
-            st.session_state.students.append(student)
+            cursor.execute("""
+            INSERT INTO students(Name, Age, Standard, Contact)
+            VALUES (?, ?, ?, ?)
+            """, (name.title(), age, standard, contact))
 
-            st.session_state.student_id += 1
+            conn.commit()
 
             st.success("✅ Student Registered Successfully")
 
@@ -101,9 +128,12 @@ elif menu == "View Students":
 
     st.header("📋 All Student Records")
 
-    if st.session_state.students:
+    df = pd.read_sql_query(
+        "SELECT * FROM students",
+        conn
+    )
 
-        df = pd.DataFrame(st.session_state.students)
+    if not df.empty:
 
         st.dataframe(
             df,
@@ -111,6 +141,7 @@ elif menu == "View Students":
         )
 
     else:
+
         st.warning("No student records found")
 
 # =========================================================
@@ -129,23 +160,25 @@ elif menu == "Search Student":
 
     if st.button("Search"):
 
-        found = False
+        cursor.execute("""
+        SELECT * FROM students
+        WHERE ID = ?
+        """, (search_id,))
 
-        for student in st.session_state.students:
+        student = cursor.fetchone()
 
-            if student["ID"] == search_id:
+        if student:
 
-                found = True
+            st.success("Student Found")
 
-                st.success("Student Found")
+            st.write(f"### ID: {student[0]}")
+            st.write(f"**Name:** {student[1]}")
+            st.write(f"**Age:** {student[2]}")
+            st.write(f"**Standard:** {student[3]}")
+            st.write(f"**Contact:** {student[4]}")
 
-                st.write(f"### ID: {student['ID']}")
-                st.write(f"**Name:** {student['Name']}")
-                st.write(f"**Age:** {student['Age']}")
-                st.write(f"**Standard:** {student['Standard']}")
-                st.write(f"**Contact:** {student['Contact']}")
+        else:
 
-        if not found:
             st.error("Student Not Found")
 
 # =========================================================
@@ -162,46 +195,74 @@ elif menu == "Update Student":
         step=1
     )
 
-    found = False
+    if st.button("Find Student"):
 
-    for student in st.session_state.students:
+        cursor.execute("""
+        SELECT * FROM students
+        WHERE ID = ?
+        """, (update_id,))
 
-        if student["ID"] == update_id:
+        student = cursor.fetchone()
 
-            found = True
+        if student:
 
             st.success("Student Found")
 
-            st.write(f"### Current Record")
-            st.write(student)
+            st.write("### Current Record")
 
-            new_standard = st.selectbox(
-                "Update Standard",
-                list(range(1, 13))
-            )
+            st.write({
+                "ID": student[0],
+                "Name": student[1],
+                "Age": student[2],
+                "Standard": student[3],
+                "Contact": student[4]
+            })
 
-            new_contact = st.text_input(
-                "Update Contact Number",
-                value=student["Contact"]
-            )
+            # STORE ID IN SESSION
+            st.session_state.update_id = update_id
 
-            if st.button("Update Student"):
+        else:
 
-                pattern = r'^[6-9]\d{9}$'
+            st.error("Student ID Not Found")
 
-                if not re.match(pattern, new_contact):
+    # SHOW UPDATE FORM
 
-                    st.error("Invalid Contact Number")
+    if "update_id" in st.session_state:
 
-                else:
+        new_standard = st.selectbox(
+            "Update Standard",
+            list(range(1, 13))
+        )
 
-                    student["Standard"] = new_standard
-                    student["Contact"] = new_contact
+        new_contact = st.text_input(
+            "Update Contact Number"
+        )
 
-                    st.success("✅ Student Updated Successfully")
+        if st.button("Update Student"):
 
-    if not found:
-        st.warning("Student ID not found")
+            pattern = r'^[6-9]\d{9}$'
+
+            if not re.match(pattern, new_contact):
+
+                st.error("Invalid Contact Number")
+
+            else:
+
+                cursor.execute("""
+                UPDATE students
+                SET Standard = ?, Contact = ?
+                WHERE ID = ?
+                """, (
+                    new_standard,
+                    new_contact,
+                    st.session_state.update_id
+                ))
+
+                conn.commit()
+
+                st.success("✅ Student Updated Successfully")
+
+                del st.session_state.update_id
 
 # =========================================================
 # DELETE STUDENT
@@ -219,19 +280,30 @@ elif menu == "Delete Student":
 
     if st.button("Delete Student"):
 
-        found = False
+        cursor.execute("""
+        SELECT * FROM students
+        WHERE ID = ?
+        """, (delete_id,))
 
-        for student in st.session_state.students:
+        student = cursor.fetchone()
 
-            if student["ID"] == delete_id:
+        if student:
 
-                st.session_state.students.remove(student)
+            cursor.execute("""
+            DELETE FROM students
+            WHERE ID = ?
+            """, (delete_id,))
 
-                found = True
+            conn.commit()
 
-                st.success("✅ Student Deleted Successfully")
+            st.success("✅ Student Deleted Successfully")
 
-                break
+        else:
 
-        if not found:
             st.error("Student ID Not Found")
+
+# =========================================================
+# CLOSE DATABASE CONNECTION
+# =========================================================
+
+conn.close()
