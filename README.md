@@ -97,6 +97,10 @@ This project helped in learning:
 
 # 👨‍💻 Author
 
-Shivam Thakur
+**Shivam Thakur**  
+Aspiring Data Analyst | Python Learner | Exploring Data Analytics & AI
 
-Beginner Python & Data Analytics Enthusiast
+## 📬 Connect With Me
+
+- 💼 LinkedIn: https://www.linkedin.com/in/shivam-thakur-55b167406/
+- 📧 Email: dataanalyst.shivamthakur@gmail.com
